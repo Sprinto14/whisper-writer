@@ -7,8 +7,10 @@ from PyQt5.QtCore import QObject, QProcess
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMessageBox
 
+from history import History
 from key_listener import KeyListener
 from result_thread import ResultThread
+from special_phrases import SPECIAL_PHRASES_DEFAULT
 from ui.main_window import MainWindow
 from ui.settings_window import SettingsWindow
 from ui.status_window import StatusWindow
@@ -47,6 +49,9 @@ class WhisperWriterApp(QObject):
         self.key_listener = KeyListener()
         self.key_listener.add_callback("on_activate", self.on_activation)
         self.key_listener.add_callback("on_deactivate", self.on_deactivation)
+
+        self.history = History(self.input_simulator)
+        self.special_phrases = SPECIAL_PHRASES_DEFAULT
 
         model_options = ConfigManager.get_config_section('model_options')
         model_path = model_options.get('local', {}).get('model_path')
@@ -162,10 +167,20 @@ class WhisperWriterApp(QObject):
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.stop()
 
+    def process_special_phrases(self, message: str) -> str:
+        if message in self.special_phrases.keys():
+            return self.special_phrases[message].func()
+        else:
+            return message
+
     def on_transcription_complete(self, result):
         """
         When the transcription is complete, type the result and start listening for the activation key again.
         """
+        # Check if the whole phrase is a special phrase, and if it is, then run the relevant function
+        result = self.process_special_phrases(result)
+        self.history.add(result)
+
         self.input_simulator.typewrite(result)
 
         if ConfigManager.get_config_value('misc', 'noise_on_completion'):
