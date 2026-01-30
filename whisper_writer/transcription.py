@@ -1,13 +1,15 @@
 import io
 import os
+from typing import Optional
 import numpy as np
+from numpy.typing import NDArray
 import soundfile as sf
 from faster_whisper import WhisperModel
 from openai import OpenAI
 
-from utils import ConfigManager
+from whisper_writer.utils import ConfigManager
 
-def create_local_model():
+def create_local_model() -> WhisperModel:
     """
     Create a local model using the faster-whisper library.
     """
@@ -44,7 +46,7 @@ def create_local_model():
     ConfigManager.console_print('Local model created.')
     return model
 
-def transcribe_local(audio_data, local_model=None):
+def transcribe_local(audio_data: NDArray[np.int16], local_model: Optional[WhisperModel] = None) -> str:
     """
     Transcribe an audio file using a local model.
     """
@@ -63,7 +65,7 @@ def transcribe_local(audio_data, local_model=None):
                                       vad_filter=model_options['local']['vad_filter'],)
     return ''.join([segment.text for segment in list(response[0])])
 
-def transcribe_api(audio_data):
+def transcribe_api(audio_data: NDArray[np.int16]) -> str:
     """
     Transcribe an audio file using the OpenAI API.
     """
@@ -75,7 +77,7 @@ def transcribe_api(audio_data):
 
     # Convert numpy array to WAV file
     byte_io = io.BytesIO()
-    sample_rate = ConfigManager.get_config_section('recording_options').get('sample_rate') or 16000
+    sample_rate: int = ConfigManager.get_config_section('recording_options').get('sample_rate') or 16000
     sf.write(byte_io, audio_data, sample_rate, format='wav')
     byte_io.seek(0)
 
@@ -88,7 +90,7 @@ def transcribe_api(audio_data):
     )
     return response.text
 
-def post_process_transcription(transcription):
+def post_process_transcription(transcription: str) -> str:
     """
     Apply post-processing to the transcription.
     """
@@ -103,7 +105,7 @@ def post_process_transcription(transcription):
 
     return transcription
 
-def transcribe(audio_data, local_model=None):
+def transcribe(audio_data: NDArray[np.int16], local_model: Optional[WhisperModel] = None) -> str:
     """
     Transcribe audio date using the OpenAI API or a local model, depending on config.
     """

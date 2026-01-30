@@ -2,11 +2,12 @@ import subprocess
 import os
 import signal
 import time
-from pynput.keyboard import Controller as PynputController
+from typing import Iterable
+from pynput.keyboard import Controller as PynputController, Key, KeyCode
 
-from utils import ConfigManager
+from whisper_writer.utils import ConfigManager
 
-def run_command_or_exit_on_failure(command):
+def run_command_or_exit_on_failure(command: Iterable[str]) -> None:
     """
     Run a shell command and exit if it fails.
 
@@ -24,7 +25,7 @@ class InputSimulator:
     A class to simulate keyboard input using various methods.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize the InputSimulator with the specified configuration.
         """
@@ -36,14 +37,14 @@ class InputSimulator:
         elif self.input_method == 'dotool':
             self._initialize_dotool()
 
-    def _initialize_dotool(self):
+    def _initialize_dotool(self) -> None:
         """
         Initialize the dotool process for input simulation.
         """
         self.dotool_process = subprocess.Popen("dotool", stdin=subprocess.PIPE, text=True)
         assert self.dotool_process.stdin is not None
 
-    def _terminate_dotool(self):
+    def _terminate_dotool(self) -> None:
         """
         Terminate the dotool process if it's running.
         """
@@ -51,14 +52,14 @@ class InputSimulator:
             os.kill(self.dotool_process.pid, signal.SIGINT)
             self.dotool_process = None
 
-    def typewrite(self, text):
+    def typewrite(self, text: str) -> None:
         """
         Simulate typing the given text with the specified interval between keystrokes.
 
         Args:
             text (str): The text to type.
         """
-        interval = ConfigManager.get_config_value('post_processing', 'writing_key_press_delay')
+        interval: float = ConfigManager.get_config_value('post_processing', 'writing_key_press_delay')
         if self.input_method == 'pynput':
             self._typewrite_pynput(text, interval)
         elif self.input_method == 'ydotool':
@@ -66,7 +67,7 @@ class InputSimulator:
         elif self.input_method == 'dotool':
             self._typewrite_dotool(text, interval)
 
-    def _typewrite_pynput(self, text, interval):
+    def _typewrite_pynput(self, text: str, interval: float) -> None:
         """
         Simulate typing using pynput.
 
@@ -79,7 +80,7 @@ class InputSimulator:
             self.keyboard.release(char)
             time.sleep(interval)
 
-    def _typewrite_ydotool(self, text, interval):
+    def _typewrite_ydotool(self, text: str, interval: float) -> None:
         """
         Simulate typing using ydotool.
 
@@ -97,7 +98,7 @@ class InputSimulator:
             text,
         ])
 
-    def _typewrite_dotool(self, text, interval):
+    def _typewrite_dotool(self, text: str, interval: float) -> None:
         """
         Simulate typing using dotool.
 
@@ -110,7 +111,7 @@ class InputSimulator:
         self.dotool_process.stdin.write(f"type {text}\n")
         self.dotool_process.stdin.flush()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """
         Perform cleanup operations, such as terminating the dotool process.
         """

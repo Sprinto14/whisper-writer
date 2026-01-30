@@ -1,26 +1,26 @@
 import os
 import sys
 import time
-from audioplayer import AudioPlayer
+# from audioplayer import AudioPlayer
 from pynput.keyboard import Controller
 from PyQt5.QtCore import QObject, QProcess
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMessageBox
 
-from history import History
-from key_listener import KeyListener
-from result_thread import ResultThread
-from special_phrases import SPECIAL_PHRASES_DEFAULT
-from ui.main_window import MainWindow
-from ui.settings_window import SettingsWindow
-from ui.status_window import StatusWindow
-from transcription import create_local_model
-from input_simulation import InputSimulator
-from utils import ConfigManager
+from whisper_writer.history import History
+from whisper_writer.key_listener import KeyListener
+from whisper_writer.result_thread import ResultThread
+from whisper_writer.special_phrases import SPECIAL_PHRASES_DEFAULT
+from whisper_writer.ui.main_window import MainWindow
+from whisper_writer.ui.settings_window import SettingsWindow
+from whisper_writer.ui.status_window import StatusWindow
+from whisper_writer.transcription import create_local_model
+from whisper_writer.input_simulation import InputSimulator
+from whisper_writer.utils import CONFIG_PATH, ConfigManager
 
 
 class WhisperWriterApp(QObject):
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize the application, opening settings window if no configuration file is found.
         """
@@ -40,7 +40,7 @@ class WhisperWriterApp(QObject):
             print('No valid configuration file found. Opening settings window...')
             self.settings_window.show()
 
-    def initialize_components(self):
+    def initialize_components(self) -> None:
         """
         Initialize the components of the application.
         """
@@ -70,7 +70,7 @@ class WhisperWriterApp(QObject):
         self.create_tray_icon()
         self.main_window.show()
 
-    def create_tray_icon(self):
+    def create_tray_icon(self) -> None:
         """
         Create the system tray icon and its context menu.
         """
@@ -93,30 +93,30 @@ class WhisperWriterApp(QObject):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self.key_listener:
             self.key_listener.stop()
         if self.input_simulator:
             self.input_simulator.cleanup()
 
-    def exit_app(self):
+    def exit_app(self) -> None:
         """
         Exit the application.
         """
         self.cleanup()
         QApplication.quit()
 
-    def restart_app(self):
+    def restart_app(self) -> None:
         """Restart the application to apply the new settings."""
         self.cleanup()
         QApplication.quit()
         QProcess.startDetached(sys.executable, sys.argv)
 
-    def on_settings_closed(self):
+    def on_settings_closed(self) -> None:
         """
         If settings is closed without saving on first run, initialize the components with default values.
         """
-        if not os.path.exists(os.path.join('src', 'config.yaml')):
+        if not os.path.exists(CONFIG_PATH):
             QMessageBox.information(
                 self.settings_window,
                 'Using Default Values',
@@ -124,7 +124,7 @@ class WhisperWriterApp(QObject):
             )
             self.initialize_components()
 
-    def on_activation(self):
+    def on_activation(self) -> None:
         """
         Called when the activation key combination is pressed.
         """
@@ -138,7 +138,7 @@ class WhisperWriterApp(QObject):
 
         self.start_result_thread()
 
-    def on_deactivation(self):
+    def on_deactivation(self) -> None:
         """
         Called when the activation key combination is released.
         """
@@ -146,7 +146,7 @@ class WhisperWriterApp(QObject):
             if self.result_thread and self.result_thread.isRunning():
                 self.result_thread.stop_recording()
 
-    def start_result_thread(self):
+    def start_result_thread(self) -> None:
         """
         Start the result thread to record audio and transcribe it.
         """
@@ -160,7 +160,7 @@ class WhisperWriterApp(QObject):
         self.result_thread.resultSignal.connect(self.on_transcription_complete)
         self.result_thread.start()
 
-    def stop_result_thread(self):
+    def stop_result_thread(self) -> None:
         """
         Stop the result thread.
         """
@@ -173,7 +173,7 @@ class WhisperWriterApp(QObject):
         else:
             return message
 
-    def on_transcription_complete(self, result):
+    def on_transcription_complete(self, result: str) -> None:
         """
         When the transcription is complete, type the result and start listening for the activation key again.
         """
@@ -183,15 +183,15 @@ class WhisperWriterApp(QObject):
 
         self.input_simulator.typewrite(result)
 
-        if ConfigManager.get_config_value('misc', 'noise_on_completion'):
-            AudioPlayer(os.path.join('assets', 'beep.wav')).play(block=True)
+        # if ConfigManager.get_config_value('misc', 'noise_on_completion'):
+        #     AudioPlayer(os.path.join('assets', 'beep.wav')).play(block=True)
 
         if ConfigManager.get_config_value('recording_options', 'recording_mode') == 'continuous':
             self.start_result_thread()
         else:
             self.key_listener.start()
 
-    def run(self):
+    def run(self) -> None:
         """
         Start the application.
         """

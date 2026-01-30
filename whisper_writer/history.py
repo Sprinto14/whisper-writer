@@ -1,4 +1,4 @@
-from input_simulation import InputSimulator
+from whisper_writer.input_simulation import InputSimulator
 
 class Event:
     def undo(self) -> str:

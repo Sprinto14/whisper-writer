@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QCoreApplication, QProcess, pyqtSignal
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.base_window import BaseWindow
-from utils import ConfigManager
+from whisper_writer.utils import ConfigManager
 
 load_dotenv()
 

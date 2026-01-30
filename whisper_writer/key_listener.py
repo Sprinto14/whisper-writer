@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from enum import Enum, auto
-from typing import Callable, Set
+from typing import Callable, List, Optional, Set
 
-from utils import ConfigManager
+from whisper_writer.utils import ConfigManager
 
 
 class InputEvent(Enum):
@@ -217,7 +217,7 @@ class InputBackend(ABC):
         pass
 
     @abstractmethod
-    def start(self):
+    def start(self) -> None:
         """
         Start the input backend.
         This method should initialize any necessary resources and begin listening for input events.
@@ -225,7 +225,7 @@ class InputBackend(ABC):
         pass
 
     @abstractmethod
-    def stop(self):
+    def stop(self) -> None:
         """
         Stop the input backend.
         This method should clean up any resources and stop listening for input events.
@@ -233,7 +233,7 @@ class InputBackend(ABC):
         pass
 
     @abstractmethod
-    def on_input_event(self, event: tuple[KeyCode, InputEvent]):
+    def on_input_event(self, event: tuple[KeyCode, InputEvent]) -> None:
         """
         Handle an input event.
         This method is called when an input event is detected.
@@ -247,7 +247,7 @@ class KeyChord:
     Represents a combination of keys that need to be pressed simultaneously.
     """
 
-    def __init__(self, keys: Set[KeyCode | frozenset[KeyCode]]):
+    def __init__(self, keys: Set[KeyCode | frozenset[KeyCode]]) -> None:
         """Initialize the KeyChord."""
         self.keys = keys
         self.pressed_keys: Set[KeyCode] = set()
@@ -276,7 +276,7 @@ class KeyListener:
     Manages input backends and listens for specific key combinations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the KeyListener with backends and activation keys."""
         self.backends = []
         self.active_backend = None
@@ -289,12 +289,12 @@ class KeyListener:
         self.initialize_backends()
         self.select_backend_from_config()
 
-    def initialize_backends(self):
+    def initialize_backends(self) -> None:
         """Initialize available input backends."""
         backend_classes = [EvdevBackend, PynputBackend]
         self.backends = [backend_class() for backend_class in backend_classes if backend_class.is_available()]
 
-    def select_backend_from_config(self):
+    def select_backend_from_config(self) -> None:
         """Select the active backend based on configuration."""
         preferred_backend = ConfigManager.get_config_value('recording_options', 'input_backend')
 
@@ -316,14 +316,14 @@ class KeyListener:
                 print(f"Unknown backend '{preferred_backend}'. Falling back to auto selection.")
                 self.select_active_backend()
 
-    def select_active_backend(self):
+    def select_active_backend(self) -> None:
         """Select the first available backend as active."""
         if not self.backends:
             raise RuntimeError("No supported input backend found")
         self.active_backend = self.backends[0]
         self.active_backend.on_input_event = self.on_input_event
 
-    def set_active_backend(self, backend_class):
+    def set_active_backend(self, backend_class) -> None:
         """Set a specific backend as active."""
         new_backend = next((b for b in self.backends if isinstance(b, backend_class)), None)
         if new_backend:
@@ -335,25 +335,25 @@ class KeyListener:
         else:
             raise ValueError(f"Backend {backend_class.__name__} is not available")
 
-    def update_backend(self):
+    def update_backend(self) -> None:
         """Update the active backend based on current configuration."""
         self.select_backend_from_config()
 
-    def start(self):
+    def start(self) -> None:
         """Start the active backend."""
         if self.active_backend:
             self.active_backend.start()
         else:
             raise RuntimeError("No active backend selected")
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the active backend."""
         if self.active_backend:
             self.active_backend.stop()
 
-    def load_activation_keys(self):
+    def load_activation_keys(self) -> None:
         """Load activation keys from configuration."""
-        key_combination = ConfigManager.get_config_value('recording_options', 'activation_key')
+        key_combination: str = ConfigManager.get_config_value('recording_options', 'activation_key')
         keys = self.parse_key_combination(key_combination)
         self.set_activation_keys(keys)
 
@@ -379,11 +379,11 @@ class KeyListener:
                     print(f"Unknown key: {key}")
         return keys
 
-    def set_activation_keys(self, keys: Set[KeyCode]):
+    def set_activation_keys(self, keys: Set[KeyCode | frozenset[KeyCode]]) -> None:
         """Set the activation keys for the KeyChord."""
         self.key_chord = KeyChord(keys)
 
-    def on_input_event(self, event):
+    def on_input_event(self, event: tuple[KeyCode, InputEvent]) -> None:
         """Handle input events and trigger callbacks if the key chord becomes active or inactive."""
         if not self.key_chord or not self.active_backend:
             return
@@ -398,17 +398,17 @@ class KeyListener:
         elif was_active and not is_active:
             self._trigger_callbacks("on_deactivate")
 
-    def add_callback(self, event: str, callback: Callable):
+    def add_callback(self, event: str, callback: Callable) -> None:
         """Add a callback function for a specific event."""
         if event in self.callbacks:
             self.callbacks[event].append(callback)
 
-    def _trigger_callbacks(self, event: str):
+    def _trigger_callbacks(self, event: str) -> None:
         """Trigger all callbacks associated with a specific event."""
         for callback in self.callbacks.get(event, []):
             callback()
 
-    def update_activation_keys(self):
+    def update_activation_keys(self) -> None:
         """Update activation keys from the current configuration."""
         self.load_activation_keys()
 
@@ -426,7 +426,7 @@ class EvdevBackend(InputBackend):
         except ImportError:
             return False
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the EvdevBackend."""
         self.devices: List[evdev.InputDevice] = []
         self.key_map: Optional[dict] = None
@@ -434,7 +434,7 @@ class EvdevBackend(InputBackend):
         self.thread: Optional[threading.Thread] = None
         self.stop_event: Optional[threading.Event] = None
 
-    def start(self):
+    def start(self) -> None:
         """Start the evdev backend."""
         import evdev
         import threading
@@ -447,18 +447,18 @@ class EvdevBackend(InputBackend):
         self._setup_signal_handler()
         self._start_listening()
 
-    def _setup_signal_handler(self):
+    def _setup_signal_handler(self) -> None:
         """Set up signal handlers for graceful shutdown."""
         import signal
 
-        def signal_handler(signum, frame):
+        def signal_handler(signum, frame) -> None:
             print("Received termination signal. Stopping evdev backend...")
             self.stop()
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the evdev backend and clean up resources."""
         if self.stop_event:
             self.stop_event.set()
@@ -476,13 +476,13 @@ class EvdevBackend(InputBackend):
                 pass  # Ignore errors when closing devices
         self.devices = []
 
-    def _start_listening(self):
+    def _start_listening(self) -> None:
         """Start the listening thread."""
         import threading
         self.thread = threading.Thread(target=self._listen_loop)
         self.thread.start()
 
-    def _listen_loop(self):
+    def _listen_loop(self) -> None:
         """Main loop for listening to input events."""
         import select
         while not self.stop_event.is_set():
@@ -496,7 +496,7 @@ class EvdevBackend(InputBackend):
                     break
                 print(f"Unexpected error in _listen_loop: {e}")
 
-    def _read_device_events(self, device):
+    def _read_device_events(self, device) -> None:
         """Read and process events from a single device."""
         try:
             for event in device.read():
@@ -505,7 +505,7 @@ class EvdevBackend(InputBackend):
         except Exception as e:
             self._handle_device_error(device, e)
 
-    def _handle_device_error(self, device, error):
+    def _handle_device_error(self, device, error) -> None:
         """Handle errors that occur when reading from a device."""
         import errno
         if isinstance(error, BlockingIOError) and error.errno == errno.EAGAIN:
@@ -516,7 +516,7 @@ class EvdevBackend(InputBackend):
         else:
             print(f"Unexpected error reading device: {error}")
 
-    def _handle_input_event(self, event):
+    def _handle_input_event(self, event) -> None:
         """Process a single input event."""
         key_code, event_type = self._translate_key_event(event)
         if key_code is not None and event_type is not None:
@@ -541,7 +541,7 @@ class EvdevBackend(InputBackend):
 
         return key_code, event_type
 
-    def _create_key_map(self):
+    def _create_key_map(self) -> dict[int, KeyCode]:
         """Create a mapping from evdev key codes to our internal KeyCode enum."""
         return {
             # Modifier keys
@@ -732,7 +732,7 @@ class EvdevBackend(InputBackend):
             self.evdev.ecodes.BTN_TASK: KeyCode.MOUSE_SIDE3,
         }
 
-    def on_input_event(self, event):
+    def on_input_event(self, event: tuple[KeyCode, InputEvent]) -> None:
         """
         Callback method to be overridden by the KeyListener.
         This method is called for each processed input event.
@@ -753,7 +753,7 @@ class PynputBackend(InputBackend):
         except ImportError:
             return False
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize PynputBackend."""
         self.keyboard_listener = None
         self.mouse_listener = None
@@ -761,7 +761,7 @@ class PynputBackend(InputBackend):
         self.mouse = None
         self.key_map = None
 
-    def start(self):
+    def start(self) -> None:
         """Start listening for keyboard and mouse events."""
         if self.keyboard is None or self.mouse is None:
             from pynput import keyboard, mouse
@@ -779,7 +779,7 @@ class PynputBackend(InputBackend):
         self.keyboard_listener.start()
         self.mouse_listener.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop listening for keyboard and mouse events."""
         if self.keyboard_listener:
             self.keyboard_listener.stop()
@@ -795,17 +795,17 @@ class PynputBackend(InputBackend):
         event_type = InputEvent.KEY_PRESS if is_press else InputEvent.KEY_RELEASE
         return key_code, event_type
 
-    def _on_keyboard_press(self, key):
+    def _on_keyboard_press(self, key) -> None:
         """Handle keyboard press events."""
         translated_event = self._translate_key_event((key, True))
         self.on_input_event(translated_event)
 
-    def _on_keyboard_release(self, key):
+    def _on_keyboard_release(self, key) -> None:
         """Handle keyboard release events."""
         translated_event = self._translate_key_event((key, False))
         self.on_input_event(translated_event)
 
-    def _on_mouse_click(self, x, y, button, pressed):
+    def _on_mouse_click(self, x, y, button, pressed) -> None:
         """Handle mouse click events."""
         translated_event = self._translate_key_event((button, pressed))
         self.on_input_event(translated_event)
@@ -954,7 +954,7 @@ class PynputBackend(InputBackend):
             self.mouse.Button.middle: KeyCode.MOUSE_MIDDLE,
         }
 
-    def on_input_event(self, event):
+    def on_input_event(self, event: tuple[KeyCode, InputEvent]) -> None:
         """
         Callback method to be set by the KeyListener.
         This method is called for each processed input event.

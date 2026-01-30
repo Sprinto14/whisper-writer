@@ -1,13 +1,16 @@
+from typing import Any, Optional
 import yaml
 import os
+
+CONFIG_PATH = "whisper_writer/config.yaml"
 
 class ConfigManager:
     _instance = None
 
     def __init__(self):
         """Initialize the ConfigManager instance."""
-        self.config = None
-        self.schema = None
+        self.config: dict | None = None
+        self.schema: dict | None = None
 
     @classmethod
     def initialize(cls, schema_path=None):
@@ -54,7 +57,7 @@ class ConfigManager:
         return value
 
     @classmethod
-    def set_config_value(cls, value, *keys):
+    def set_config_value(cls, value, *keys) -> None:
         """Set a specific configuration value using nested keys."""
         if cls._instance is None:
             raise RuntimeError("ConfigManager not initialized")
@@ -69,7 +72,7 @@ class ConfigManager:
         config[keys[-1]] = value
 
     @staticmethod
-    def load_config_schema(schema_path=None):
+    def load_config_schema(schema_path: Optional[str] = None):
         """Load the configuration schema from a YAML file."""
         if schema_path is None:
             base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -79,7 +82,7 @@ class ConfigManager:
             schema = yaml.safe_load(file)
         return schema
 
-    def load_default_config(self):
+    def load_default_config(self) -> dict[str, Any]:
         """Load default configuration values from the schema."""
         def extract_value(item):
             if isinstance(item, dict):
@@ -94,7 +97,7 @@ class ConfigManager:
             config[category] = extract_value(settings)
         return config
 
-    def load_user_config(self, config_path=os.path.join('src', 'config.yaml')):
+    def load_user_config(self, config_path: str = CONFIG_PATH)-> None:
         """Load user configuration and merge with default config."""
         def deep_update(source, overrides):
             for key, value in overrides.items():
@@ -112,7 +115,7 @@ class ConfigManager:
                 print("Error in configuration file. Using default configuration.")
 
     @classmethod
-    def save_config(cls, config_path=os.path.join('src', 'config.yaml')):
+    def save_config(cls, config_path: str = CONFIG_PATH) -> None:
         """Save the current configuration to a YAML file."""
         if cls._instance is None:
             raise RuntimeError("ConfigManager not initialized")
@@ -120,7 +123,7 @@ class ConfigManager:
             yaml.dump(cls._instance.config, file, default_flow_style=False)
 
     @classmethod
-    def reload_config(cls):
+    def reload_config(cls) -> None:
         """
         Reload the configuration from the file.
         """
@@ -130,13 +133,12 @@ class ConfigManager:
         cls._instance.load_user_config()
 
     @classmethod
-    def config_file_exists(cls):
+    def config_file_exists(cls) -> bool:
         """Check if a valid config file exists."""
-        config_path = os.path.join('src', 'config.yaml')
-        return os.path.isfile(config_path)
+        return os.path.isfile(CONFIG_PATH)
 
     @classmethod
-    def console_print(cls, message):
+    def console_print(cls, message: str) -> None:
         """Print a message to the console if enabled in the configuration."""
         if cls._instance and cls._instance.config['misc']['print_to_terminal']:
             print(message)

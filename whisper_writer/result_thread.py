@@ -1,6 +1,9 @@
 import time
 import traceback
+from typing import Optional
+from faster_whisper import WhisperModel
 import numpy as np
+from numpy.typing import NDArray
 import sounddevice as sd
 import tempfile
 import wave
@@ -9,8 +12,8 @@ from PyQt5.QtCore import QThread, QMutex, pyqtSignal
 from collections import deque
 from threading import Event
 
-from transcription import transcribe
-from utils import ConfigManager
+from whisper_writer.transcription import transcribe
+from whisper_writer.utils import ConfigManager
 
 
 class ResultThread(QThread):
@@ -32,7 +35,7 @@ class ResultThread(QThread):
     statusSignal = pyqtSignal(str)
     resultSignal = pyqtSignal(str)
 
-    def __init__(self, local_model=None):
+    def __init__(self, local_model: Optional[WhisperModel] = None) -> None:
         """
         Initialize the ResultThread.
 
@@ -45,13 +48,13 @@ class ResultThread(QThread):
         self.sample_rate = None
         self.mutex = QMutex()
 
-    def stop_recording(self):
+    def stop_recording(self) -> None:
         """Stop the current recording session."""
         self.mutex.lock()
         self.is_recording = False
         self.mutex.unlock()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the entire thread execution."""
         self.mutex.lock()
         self.is_running = False
@@ -59,7 +62,7 @@ class ResultThread(QThread):
         self.statusSignal.emit('idle')
         self.wait()
 
-    def run(self):
+    def run(self) -> None:
         """Main execution method for the thread."""
         try:
             if not self.is_running:
@@ -104,7 +107,7 @@ class ResultThread(QThread):
         finally:
             self.stop_recording()
 
-    def _record_audio(self):
+    def _record_audio(self) -> NDArray[np.int16] | None:
         """
         Record audio from the microphone and save it to a temporary file.
 
@@ -129,11 +132,11 @@ class ResultThread(QThread):
             silent_frame_count = 0
 
         audio_buffer = deque(maxlen=frame_size)
-        recording = []
+        recording: list[np.int16] = []
 
         data_ready = Event()
 
-        def audio_callback(indata, frames, time, status):
+        def audio_callback(indata: np.ndarray, frames: int, time, status) -> None:
             if status:
                 ConfigManager.console_print(f"Audio callback status: {status}")
             audio_buffer.extend(indata[:, 0])
