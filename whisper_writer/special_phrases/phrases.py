@@ -7,7 +7,7 @@ from whisper_writer.formatting import Formatter
 from whisper_writer.input_simulation import InputSimulator
 from whisper_writer.navigation import Navigator
 from whisper_writer.special_phrases.objects import END_OF_SENTENCE_PUNCTUATION_STRING, PUNCTUATION
-from whisper_writer.special_phrases.special_phrase import SpecialPhrase
+from whisper_writer.special_phrases.special_phrase import CommandMatch, SpecialPhrase
 from whisper_writer.text_buffer import TextBuffer
 from whisper_writer.utils import ConfigManager
 
@@ -20,13 +20,13 @@ PUNCTUATION_STRING = ''.join(c for c in PUNCTUATION.values() if c not in "\'")
 class SpecialPhrasesManager:
     def __init__(
             self, *,
-            text_buffer: TextBuffer, 
             input_simulator: InputSimulator,
+            text_buffer: TextBuffer,
     ) -> None:
-        self.__text_buffer = text_buffer
         self.__input_simulator = input_simulator
-        self.__formatter = Formatter(input_simulator=self.__input_simulator)
+        self.__text_buffer = text_buffer
         self.__navigator = Navigator(input_simulator=self.__input_simulator, text_buffer=self.__text_buffer)
+        self.__formatter = Formatter(input_simulator=self.__input_simulator, navigator=self.__navigator)
         self.__excel_utils = ExcelUtils(input_simulator=self.__input_simulator)
 
         self.preprocess_no_space = False
@@ -37,6 +37,7 @@ class SpecialPhrasesManager:
         self.start_of_sentence = True # Used to capitalise the first letter of the first word in a sentence. 
 
         self.cur_phrase: str = ""
+        self.ESCAPE_PHRASE = "escape "
 
         ### Inline commands
         self.inline_commands = [
@@ -44,7 +45,6 @@ class SpecialPhrasesManager:
             SpecialPhrase("i", func=lambda: "I"),
 
             # Special characters
-            SpecialPhrase("new line", func=lambda:"\n", end_of_sentence=True),
             SpecialPhrase("new paragraph", func=lambda:"\n\n", end_of_sentence=True),
             SpecialPhrase("space bar", func=lambda:" "),
             SpecialPhrase("spacebar", func=lambda:" "),
@@ -198,11 +198,34 @@ class SpecialPhrasesManager:
         return output
 
     def __substitute_inline_commands(self, phrase: str) -> str:
+
+        # Find all inline commands present inside the phrase
+        command_match_list: list[tuple[CommandMatch, SpecialPhrase]] = []
         for sp in self.inline_commands:
-            if (args_list := sp.match_inline_command(phrase)) is not None:
-                for args in args_list:
-                    replacement_string = sp.call(args)
-                    phrase = re.sub(sp.re_pattern, replacement_string, phrase, count=1)
+            if (new_command_match_list := sp.match_inline_command(phrase)) is not None:
+                command_match_list.extend(zip(new_command_match_list, [sp]*len(new_command_match_list)))
+
+        # Sort the commands in order of their order in the phrase
+        command_match_list.sort(key = lambda a: a[0].start_index)
+
+        # Filter out any overlapping commands - prioritise commands that started first
+        index = 1
+        while (index < len(command_match_list)):
+            if (command_match_list[index][0].start_index < command_match_list[index - 1][0].end_index):
+                command_match_list.pop(index)
+            else:
+                index += 1
+
+        # Evaluate all commands in order
+        print("command match list:", command_match_list)
+        for command_match, sp in reversed(command_match_list):
+            # Escape the string if it is preceded by the ESCAPE_PHRASE, otherwise call the function and replace the text
+            escape_start_index = max(command_match.start_index - len(self.ESCAPE_PHRASE), 0)
+            if phrase[escape_start_index:command_match.start_index] == self.ESCAPE_PHRASE:
+                phrase = phrase[:escape_start_index] + phrase[command_match.start_index:]
+            else:
+                replacement_string = sp.call(command_match.args)
+                phrase = phrase[:command_match.start_index] + replacement_string + phrase[command_match.end_index:]
 
         return phrase
 
@@ -210,11 +233,13 @@ class SpecialPhrasesManager:
         # Iterate through the sentence word by word to do the final processing
         output: list[str] = []
         print(self.start_of_sentence)
-        if not self.first_phrase:
-            output.append(" ")
+        if self.first_phrase:
+            self.first_phrase = False
+        else:
+            output.append("") # When joined with spaces, 
 
         for word in phrase.split(" "):
-            print("word:", repr(word), self.start_of_sentence)
+
             if not word:
                 continue
 
@@ -223,7 +248,11 @@ class SpecialPhrasesManager:
                 self.start_of_sentence = False
 
             if word[-1] in END_OF_SENTENCE_PUNCTUATION_STRING:
+                self.first_phrase = False
                 self.start_of_sentence = True
+
+            if word[-1] in "\n":
+                self.first_phrase = True
 
             if word in PUNCTUATION_STRING:
                 if output:

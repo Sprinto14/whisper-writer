@@ -1,4 +1,4 @@
-
+from dataclasses import dataclass
 import re
 from typing import Any, Callable, Iterable, Optional
 
@@ -27,6 +27,14 @@ STRENUM_GROUPS: dict[str, Any] = {
 
 REGEX_GROUPS = {k: generate_regex_group(v) for k,v in STRENUM_GROUPS.items()}
 REGEX_GROUPS_PATTERN = "|".join(STRENUM_GROUPS.keys())
+
+
+@dataclass
+class CommandMatch:
+    text: str
+    start_index: int
+    end_index: int
+    args: tuple[Any, ...]
 
 
 class SpecialPhrase:
@@ -61,7 +69,7 @@ class SpecialPhrase:
         match = re.fullmatch(self.re_pattern, phrase)
         return tuple(group_type.get(m, m) for m, group_type in zip(match.groups(), self.re_groups)) if match else None
 
-    def match_inline_command(self, phrase: str) -> tuple[tuple[Any, ...], ...] | None:
+    def match_inline_command(self, phrase: str) -> tuple[CommandMatch, ...] | None:
         """
         Attempt to match the given phrase against the given SpecialPhrase. This can match multiple times. 
         If there is a match, then return a tuple of the converted parameters based on the types defined in the SpecialPhrase.re_groups for each match (resulting in a tuple of tuples).
@@ -69,8 +77,11 @@ class SpecialPhrase:
         """
         matches = re.finditer(self.re_pattern, phrase)
         result = tuple(
-            tuple(
-                group_type.get(m, m) for m, group_type in zip(match.groups(), self.re_groups)
+            CommandMatch(
+                match.group(0),
+                match.start(0),
+                match.end(0),
+                tuple(group_type.get(m, m) for m, group_type in zip(match.groups(), self.re_groups)),
             )
             for match in matches if match
         )
