@@ -1,6 +1,6 @@
 import time
 import traceback
-from typing import Optional
+from typing import Any, Optional
 from faster_whisper import WhisperModel
 import numpy as np
 from numpy.typing import NDArray
@@ -42,10 +42,10 @@ class ResultThread(QThread):
         :param local_model: Local transcription model (if applicable)
         """
         super().__init__()
-        self.local_model = local_model
-        self.is_recording = False
-        self.is_running = True
-        self.sample_rate = None
+        self.local_model: WhisperModel | None = local_model
+        self.is_recording: bool = False
+        self.is_running: bool = True
+        self.sample_rate: int | None = None
         self.mutex = QMutex()
 
     def stop_recording(self) -> None:

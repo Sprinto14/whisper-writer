@@ -31,6 +31,7 @@ class InputSimulator:
         """
         self.input_method = ConfigManager.get_config_value('post_processing', 'input_method')
         self.dotool_process = None
+        self.held_keys: set[Key | KeyCode] = set()
 
         if self.input_method == 'pynput':
             self.keyboard = PynputController()
@@ -117,3 +118,37 @@ class InputSimulator:
         """
         if self.input_method == 'dotool':
             self._terminate_dotool()
+
+    def simulate_keypress(self, keys: Key | KeyCode | Iterable[Key | KeyCode], n: int = 1) -> None:
+        """
+        Press a collection of keys together 'n' times.
+        """
+
+        if not isinstance(keys, Iterable):
+            keys = frozenset((keys,))
+
+        for i in range(n):
+            for key in keys:
+                self.keyboard.press(key)
+
+            for key in keys:
+                self.keyboard.release(key)
+
+    def press_and_hold_key(self, key: Key | KeyCode) -> None:
+        self.held_keys.add(key)
+        self.keyboard.press(key)
+
+    def release_keys(self) -> None:
+        for key in self.held_keys:
+            self.keyboard.release(key)
+        self.held_keys = set()
+
+    class CommonKeypresses:
+        UNDO = (Key.ctrl, KeyCode.from_char("z"))
+        REDO = (Key.ctrl, KeyCode.from_char("y"))
+        CUT = (Key.ctrl, KeyCode.from_char("x"))
+        COPY = (Key.ctrl, KeyCode.from_char("c"))
+        PASTE = (Key.ctrl, KeyCode.from_char("v"))
+        SELECT_ALL = (Key.ctrl, KeyCode.from_char("a"))
+        SAVE = (Key.ctrl, KeyCode.from_char("s"))
+        CLEAR_FORMATTING = (Key.ctrl, Key.space, KeyCode.from_char("m")) # Combine word and libreoffice shortcut (ctrl+space & ctrl+m)

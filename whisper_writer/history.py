@@ -37,7 +37,7 @@ class History:
     def __init__(self, input_simulator: InputSimulator):
         self.history: list[Event] = []
         self.cur_state: int = -1
-        self.inputSimulator = input_simulator
+        self.__input_simulator = input_simulator
 
     def add(self, msg: str) -> None:
         # If we are not at the end of the current history, we need to remove the rest of the history stack before we add to it

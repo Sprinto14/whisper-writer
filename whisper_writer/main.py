@@ -7,10 +7,10 @@ from PyQt5.QtCore import QObject, QProcess
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMessageBox
 
-from whisper_writer.history import History
 from whisper_writer.key_listener import KeyListener
 from whisper_writer.result_thread import ResultThread
-from whisper_writer.special_phrases import SPECIAL_PHRASES_DEFAULT
+from whisper_writer.special_phrases.phrases import SpecialPhrasesManager
+from whisper_writer.text_buffer import TextBuffer
 from whisper_writer.ui.main_window import MainWindow
 from whisper_writer.ui.settings_window import SettingsWindow
 from whisper_writer.ui.status_window import StatusWindow
@@ -27,6 +27,8 @@ class WhisperWriterApp(QObject):
         super().__init__()
         self.app = QApplication(sys.argv)
         self.app.setWindowIcon(QIcon(os.path.join('assets', 'ww-logo.png')))
+
+        self.key_listener: KeyListener | None = None
 
         ConfigManager.initialize()
 
@@ -50,8 +52,8 @@ class WhisperWriterApp(QObject):
         self.key_listener.add_callback("on_activate", self.on_activation)
         self.key_listener.add_callback("on_deactivate", self.on_deactivation)
 
-        self.history = History(self.input_simulator)
-        self.special_phrases = SPECIAL_PHRASES_DEFAULT
+        self.text_buffer = TextBuffer(self.input_simulator)
+        self.special_phrases_manager = SpecialPhrasesManager(text_buffer=self.text_buffer, input_simulator=self.input_simulator)
 
         model_options = ConfigManager.get_config_section('model_options')
         model_path = model_options.get('local', {}).get('model_path')
@@ -167,19 +169,12 @@ class WhisperWriterApp(QObject):
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.stop()
 
-    def process_special_phrases(self, message: str) -> str:
-        if message in self.special_phrases.keys():
-            return self.special_phrases[message].func()
-        else:
-            return message
-
     def on_transcription_complete(self, result: str) -> None:
         """
         When the transcription is complete, type the result and start listening for the activation key again.
         """
         # Check if the whole phrase is a special phrase, and if it is, then run the relevant function
-        result = self.process_special_phrases(result)
-        self.history.add(result)
+        result = self.special_phrases_manager.process_phrase(result)
 
         self.input_simulator.typewrite(result)
 

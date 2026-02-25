@@ -105,7 +105,7 @@ def post_process_transcription(transcription: str) -> str:
 
     return transcription
 
-def transcribe(audio_data: NDArray[np.int16], local_model: Optional[WhisperModel] = None) -> str:
+def transcribe(audio_data: NDArray[np.int16] | None, local_model: Optional[WhisperModel] = None) -> str:
     """
     Transcribe audio date using the OpenAI API or a local model, depending on config.
     """
