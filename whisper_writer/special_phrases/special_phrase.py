@@ -7,6 +7,8 @@ from whisper_writer.locating import LOCATING_PHRASES
 from whisper_writer.special_phrases.objects import ITEMS, KEYS, NUMBERS
 
 
+fdbg = open("debug.out", "w")
+
 # Regex match groups
 def generate_regex_group(x: Iterable[str]) -> str:
     return "(" + "|".join(x) + ")"
@@ -34,7 +36,11 @@ class CommandMatch:
     text: str
     start_index: int
     end_index: int
+    func: Callable[..., Optional[str]]
     args: tuple[Any, ...]
+    space_before: bool
+    space_after: bool
+    end_of_sentence: bool
 
 
 class SpecialPhrase:
@@ -42,9 +48,11 @@ class SpecialPhrase:
     A single special phrase, which is either replaced by a special character, or triggers an action different from simply typing to the screen. 
     """
 
-    def __init__(self, phrase: str, func: Callable[..., Optional[str]], end_of_sentence: bool = False) -> None:
+    def __init__(self, phrase: str, func: Callable[..., str | None], space_before: bool = True, space_after: bool = True, end_of_sentence: bool = False) -> None:
         self.phrase = phrase
         self.func = func
+        self.space_before = space_before
+        self.space_after = space_after
         self.end_of_sentence = end_of_sentence
         self.re_pattern = self.generate_regex_phrase(phrase)
         self.re_groups = self.find_regex_groups(phrase)
@@ -66,8 +74,8 @@ class SpecialPhrase:
         If there is a match, then return a tuple of the converted parameters based on the types defined in the SpecialPhrase.re_groups.
         If a parameter cannot be converted, then the matched string is returned instead (allowing for word captures).
         """
-        match = re.fullmatch(self.re_pattern, phrase)
-        return tuple(group_type.get(m, m) for m, group_type in zip(match.groups(), self.re_groups)) if match else None
+        match = re.fullmatch(self.re_pattern, phrase.lower())
+        return tuple(group_type.get(m, phrase[match.start(i):match.end(i)]) for i, (m, group_type) in enumerate(zip(match.groups(), self.re_groups), 1)) if match else None
 
     def match_inline_command(self, phrase: str) -> tuple[CommandMatch, ...] | None:
         """
@@ -75,13 +83,17 @@ class SpecialPhrase:
         If there is a match, then return a tuple of the converted parameters based on the types defined in the SpecialPhrase.re_groups for each match (resulting in a tuple of tuples).
         If a parameter cannot be converted, then the matched string is returned instead (allowing for word captures).
         """
-        matches = re.finditer(self.re_pattern, phrase)
+        matches = re.finditer(self.re_pattern, phrase.lower())
         result = tuple(
             CommandMatch(
-                match.group(0),
-                match.start(0),
-                match.end(0),
-                tuple(group_type.get(m, m) for m, group_type in zip(match.groups(), self.re_groups)),
+                text=match.group(0),
+                start_index=match.start(0),
+                end_index=match.end(0),
+                func=self.func,
+                args=tuple(group_type.get(m, phrase[match.start(i):match.end(i)]) for i, (m, group_type) in enumerate(zip(match.groups(), self.re_groups), 1)),
+                space_before=self.space_before,
+                space_after=self.space_after,
+                end_of_sentence=self.end_of_sentence,
             )
             for match in matches if match
         )

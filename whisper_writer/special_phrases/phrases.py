@@ -1,20 +1,14 @@
-import re
-
 from pynput.keyboard import Key
 
 from whisper_writer.excel_inputs import ExcelUtils
 from whisper_writer.formatting import Formatter
 from whisper_writer.input_simulation import InputSimulator
 from whisper_writer.navigation import Navigator
-from whisper_writer.special_phrases.objects import END_OF_SENTENCE_PUNCTUATION_STRING, PUNCTUATION
-from whisper_writer.special_phrases.special_phrase import CommandMatch, SpecialPhrase
+from whisper_writer.special_phrases.objects import Item
+from whisper_writer.special_phrases.punctuation import PUNCTUATION, PUNCTUATION_STRING
+from whisper_writer.special_phrases.special_phrase import CommandMatch, SpecialPhrase, fdbg
 from whisper_writer.text_buffer import TextBuffer
 from whisper_writer.utils import ConfigManager
-
-
-fdbg = open("debug.out", "w")
-
-PUNCTUATION_STRING = ''.join(c for c in PUNCTUATION.values() if c not in "\'")
 
 
 class SpecialPhrasesManager:
@@ -33,7 +27,7 @@ class SpecialPhrasesManager:
         self.preprocess_all_caps = False
         self.preprocess_auto_caps = True
         self.preprocess_auto_punctuation = False
-        self.first_phrase = True # Used to add spaces between transcribed phrases. This should be re-enabled every time we detect manual input to avoid adding extra spaces
+        self.prepend_space = False # Used to add spaces between transcribed phrases. This should be disabled every time we detect manual input to avoid adding extra spaces
         self.start_of_sentence = True # Used to capitalise the first letter of the first word in a sentence. 
 
         self.cur_phrase: str = ""
@@ -45,19 +39,16 @@ class SpecialPhrasesManager:
             SpecialPhrase("i", func=lambda: "I"),
 
             # Special characters
-            SpecialPhrase("new paragraph", func=lambda:"\n\n", end_of_sentence=True),
-            SpecialPhrase("space bar", func=lambda:" "),
-            SpecialPhrase("spacebar", func=lambda:" "),
-            SpecialPhrase("tab key", func=lambda:"\t"),
+            SpecialPhrase("space bar", func=lambda:" ", space_before=False, space_after=False),
+            SpecialPhrase("spacebar", func=lambda:" ", space_before=False, space_after=False),
+            SpecialPhrase("tab key", func=lambda:"\t", space_before=False, space_after=False),
             SpecialPhrase("numeral {number}", func=lambda:"convert_number_to_numeral({number})"),
             SpecialPhrase("roman numeral {number}", func=lambda:"convert_number_to_roman_numeral({number})"),
 
             # Formatting
             SpecialPhrase("cap {word}", func=self.__formatter.cap), # Can be used as "cap {word}" to capitalise the first letter of the next word
             SpecialPhrase("all caps {word}", func=self.__formatter.all_cap),
-        ] + [
-            SpecialPhrase(k, (lambda s: lambda: s)(v)) for k, v in PUNCTUATION.items()
-        ]
+        ] + PUNCTUATION
 
 
         ### Standalone commands
@@ -160,8 +151,7 @@ class SpecialPhrasesManager:
 
             # Special phrases
             SpecialPhrase("add auto-text", func=lambda:"add_auto_text"),
-            SpecialPhrase("when i say {phrase}, replace with {phrase}", func=self.add_auto_text),
-            SpecialPhrase("when I say {phrase}, replace with {phrase}", func=self.add_auto_text),
+            SpecialPhrase("when i say {phrase} replace with {phrase}", func=self.add_auto_text),
 
             # Excel
             SpecialPhrase("go to cell {cell_ref}", func=self.__excel_utils.goto_cell),
@@ -184,11 +174,21 @@ class SpecialPhrasesManager:
         return False
 
     def __preprocess_phrase(self, phrase: str) -> str:
-        output = phrase[0].lower() + phrase[1:]
-        if not self.preprocess_auto_caps: output = phrase.lower()
-        if output[-1] == " ": print("removing space "); output = output[:-1]
+
+        if not phrase or phrase == " ":
+            return ""
+
+        output = phrase
+
+        # Remove spaces
+        if output[0] == " ": output = output[1:]
+        if output and output[-1] == " ": output = output[:-1]
+
+        # Remove case and punctuation
+        output = output[0].lower() + output[1:]
+        if not self.preprocess_auto_caps: output = output.lower()
         if self.preprocess_no_space: output.replace(" ", "")
-        if not self.preprocess_auto_punctuation: output = "".join(filter(lambda char: char not in PUNCTUATION_STRING, output))
+        if not self.preprocess_auto_punctuation: output = "".join(c for c in output if c not in PUNCTUATION_STRING)
         return output
 
     def __postprocess_phrase(self, phrase: str) -> str:
@@ -197,87 +197,116 @@ class SpecialPhrasesManager:
         if self.preprocess_no_space: output.replace(" ", "")
         return output
 
-    def __substitute_inline_commands(self, phrase: str) -> str:
-
-        # Find all inline commands present inside the phrase
-        command_match_list: list[tuple[CommandMatch, SpecialPhrase]] = []
+    def __find_all_inline_commands(self, phrase: str) -> list[CommandMatch]:
+        command_match_list: list[CommandMatch] = []
         for sp in self.inline_commands:
             if (new_command_match_list := sp.match_inline_command(phrase)) is not None:
-                command_match_list.extend(zip(new_command_match_list, [sp]*len(new_command_match_list)))
+                command_match_list.extend(new_command_match_list)
 
         # Sort the commands in order of their order in the phrase
-        command_match_list.sort(key = lambda a: a[0].start_index)
+        command_match_list.sort(key = lambda a: a.start_index)
 
         # Filter out any overlapping commands - prioritise commands that started first
         index = 1
         while (index < len(command_match_list)):
-            if (command_match_list[index][0].start_index < command_match_list[index - 1][0].end_index):
+            if (command_match_list[index].start_index < command_match_list[index - 1].end_index):
                 command_match_list.pop(index)
             else:
                 index += 1
 
-        # Evaluate all commands in order
-        print("command match list:", command_match_list)
-        for command_match, sp in reversed(command_match_list):
+        return command_match_list
+
+
+    def __substitute_inline_commands(self, phrase: str) -> list[str | CommandMatch]:
+
+        command_match_list = self.__find_all_inline_commands(phrase)
+
+        # Build a list of strings and function tuples that can later be evaluated in order to build the final processed phrase
+        print("\n\nCommand match list:\n", command_match_list, file=fdbg, flush=True)
+        output: list[str | CommandMatch] = []
+        cur_index = 0
+        for command_match in command_match_list:
+
             # Escape the string if it is preceded by the ESCAPE_PHRASE, otherwise call the function and replace the text
             escape_start_index = max(command_match.start_index - len(self.ESCAPE_PHRASE), 0)
-            if phrase[escape_start_index:command_match.start_index] == self.ESCAPE_PHRASE:
-                phrase = phrase[:escape_start_index] + phrase[command_match.start_index:]
+
+            if phrase[escape_start_index:command_match.start_index] == self.ESCAPE_PHRASE: # If command is escaped...
+
+                # The command is escaped - simply add the command string to the output list, cutting out the ESCAPE_PHRASE
+                if escape_start_index > cur_index:
+                    output.append(phrase[cur_index:escape_start_index] + phrase[command_match.start_index:command_match.end_index])
+                else:
+                    output.append(phrase[command_match.start_index:command_match.end_index])
+
+            else: # The command is not escaped
+
+                # Add any text leading up to the command to the output list
+                if command_match.start_index > cur_index:
+                    output.append(phrase[cur_index:command_match.start_index - 1])
+
+                # Add the CommandMatch to the list
+                output.append(command_match)
+
+            cur_index = command_match.end_index + 1
+
+        if cur_index < len(phrase):
+            output.append(phrase[cur_index:])
+
+        # Finally, combine any adjacent strings in the list to make later processing easier
+        index = 1
+        while (index < len(output)):
+            if isinstance(output[index - 1], str) and isinstance(output[index], str):
+                output[index - 1] += " " + output.pop(index)
             else:
-                replacement_string = sp.call(command_match.args)
-                phrase = phrase[:command_match.start_index] + replacement_string + phrase[command_match.end_index:]
+                index += 1
 
-        return phrase
+        print("\n\nInline command list:\n", output, file=fdbg, flush=True)
+        return output
 
-    def __format_phrase(self, phrase: str) -> str:
-        # Iterate through the sentence word by word to do the final processing
-        output: list[str] = []
-        print(self.start_of_sentence)
-        if self.first_phrase:
-            self.first_phrase = False
-        else:
-            output.append("") # When joined with spaces, 
+    def __format_phrase_from_command_list(self, command_list: list[str | CommandMatch]) -> str:
+        print("\n\nCommand list:", command_list, file=fdbg, flush=True)
+        output_phrase: str = ""
 
-        for word in phrase.split(" "):
+        for command in command_list:
+            print("command:", command, ":", self.prepend_space)
 
-            if not word:
+            if isinstance(command, str):
+
+                if self.prepend_space:
+                    output_phrase += " "
+                else:
+                    self.prepend_space = True
+
+                if self.start_of_sentence:
+                    output_phrase += command[0].upper() + command[1:]
+                else:
+                    output_phrase += command
                 continue
 
-            if self.start_of_sentence:
-                word = self.__formatter.cap(word)
-                self.start_of_sentence = False
+            command_str = command.func(*command.args)
+            if command_str:
 
-            if word[-1] in END_OF_SENTENCE_PUNCTUATION_STRING:
-                self.first_phrase = False
-                self.start_of_sentence = True
+                if command.space_before and self.prepend_space: output_phrase += " "
+                output_phrase += command_str
+                self.start_of_sentence = command.end_of_sentence
+                self.prepend_space = command.space_after
 
-            if word[-1] in "\n":
-                self.first_phrase = True
-
-            if word in PUNCTUATION_STRING:
-                if output:
-                    output[-1] += word
-                    continue
-
-            output.append(word)
-
-        output_phrase = " ".join(output).replace("\n ", "\n")
         return output_phrase
 
     def process_inline_commands(self, phrase: str) -> str:
-        s = self.__preprocess_phrase(phrase)
-        s = self.__substitute_inline_commands(s)
-        s = self.__format_phrase(s)
+        s = self.__substitute_inline_commands(phrase)
+        s = self.__format_phrase_from_command_list(s)
         s = self.__postprocess_phrase(s)
         self.cur_phrase = s
         return s
 
 
     def process_phrase(self, phrase: str) -> str:
-        if (self.__process_standalone_command(phrase)):
+        s = self.__preprocess_phrase(phrase)
+        if (self.__process_standalone_command(s)):
             return ""
 
-        return self.process_inline_commands(phrase)
+        return self.process_inline_commands(s)
 
 
     def __set_no_space(self, enable: bool) -> None:
